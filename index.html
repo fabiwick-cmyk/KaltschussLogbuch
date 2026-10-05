@@ -118,7 +118,7 @@ html, body { height: 100%; background: var(--bg); color: var(--txt); font-family
 
 /* ── VIRTUAL SCHEIBE ── */
 #vt-wrap { display: flex; flex-direction: column; align-items: center; }
-#vt-cv { max-width: 100%; border-radius: 4px; display: block; }
+#vt-cv { max-width: 100%; border-radius: 0; display: block; background: var(--bg); }
 #vt-info { font-size: 11px; color: var(--dim); margin-top: 8px; text-align: center; }
 
 /* ── FILTER BAR ── */
@@ -765,7 +765,10 @@ function renderVT() {
   ctx.clearRect(0,0,S,S);
   var bg = new Image();
   bg.onload = function() {
-    ctx.drawImage(bg,0,0,S,S);
+    // Nur die eigentliche 10×10-cm-Anschussscheibe anzeigen.
+    // Der äußere Bildrand der Vorlagen-Grafik wird nicht mitgerendert.
+    var CROP = { x:64, y:52, w:586, h:586 };
+    ctx.drawImage(bg, CROP.x, CROP.y, CROP.w, CROP.h, 0, 0, S, S);
     var ci=0, leg=[], tot=0;
     fil.forEach(function(en) {
       var c = COLORS[ci%COLORS.length]; ci++;
@@ -777,7 +780,11 @@ function renderVT() {
         // gespeicherte cm-Position ist die verlässliche gemeinsame Koordinate.
         var tx = TEMPLATE_CALIB.cx + h.xCm * TEMPLATE_CALIB.sx;
         var ty = TEMPLATE_CALIB.cy + h.yCm * TEMPLATE_CALIB.sy;
-        var px = tx / 704 * S, py = ty / 698 * S, r=8;
+        // Dieselbe Crop-Geometrie wie beim Hintergrund verwenden, damit
+        // die Treffer trotz entferntem Außenrand exakt auf der Scheibe bleiben.
+        var px = (tx - CROP.x) / CROP.w * S;
+        var py = (ty - CROP.y) / CROP.h * S;
+        var r=8;
         ctx.beginPath(); ctx.arc(px,py,r+4,0,Math.PI*2);
         ctx.fillStyle=c+'33'; ctx.fill();
         ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2);
