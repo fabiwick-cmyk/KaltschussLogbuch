@@ -1,5 +1,10 @@
-Kaltschuss Logbuch – Autoerkennung V6
+Kaltschuss Logbuch – Autoerkennung V7
 
-V6 behebt die Darstellung im Reiter „Scheibe“ grundlegend: Die virtuelle 10×10-cm-Scheibe wird nicht mehr aus der eingebetteten PNG-Vorlage geladen. Stattdessen wird nur die weiße Scheibe mit Raster, Achsen, Zielring und Mittelpunkt direkt auf dem Canvas gezeichnet. Ein schwarzer Außenrand der Vorlage kann dadurch nicht mehr erscheinen.
+V7 ist eine Diagnose-/Cache-Version.
+- Sichtbare Versionsanzeige „V7“ im App-Header und im Reiter Scheibe.
+- Der Reiter Scheibe zeichnet die Zielscheibe direkt als Canvas; die alte eingebettete Zielgrafik wird dort nicht verwendet.
+- Automatische Treffererkennung bleibt wie in V6.
+- Datenstruktur und bestehende Einträge werden nicht absichtlich verändert.
 
-Die Treffer werden weiterhin über die gespeicherten xCm/yCm-Koordinaten auf die virtuelle Scheibe übertragen.
+Für GitHub Pages: index.html im Repository durch diese V7-index.html ersetzen.
+Danach die auf dem iPhone installierte Home-Bildschirm-Web-App ggf. einmal entfernen und neu über Safari zur Startseite hinzufügen, damit die neue index.html sicher geladen wird.
