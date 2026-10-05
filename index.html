@@ -763,76 +763,101 @@ function renderVT() {
   cv.width = S; cv.height = S;
   var ctx = cv.getContext('2d');
   ctx.clearRect(0,0,S,S);
-  var bg = new Image();
-  bg.onload = function() {
-    // Nur die eigentliche weiße 10×10-cm-Anschussscheibe anzeigen.
-    // Die eingebettete Vorlage enthält außen einen schwarzen Druck-/Bildrand.
-    // Der Ausschnitt wird deshalb aus der tatsächlichen Vorlage bestimmt,
-    // statt einen festen Rand zu übernehmen. So bleibt die Darstellung auch
-    // dann sauber, wenn sich die Vorlage minimal ändert.
-    var CROP = { x:65, y:53, w:585, h:585 };
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0,0,S,S);
-    ctx.drawImage(bg, CROP.x, CROP.y, CROP.w, CROP.h, 0, 0, S, S);
-    var ci=0, leg=[], tot=0;
-    fil.forEach(function(en) {
-      var c = COLORS[ci%COLORS.length]; ci++;
-      leg.push({d:en.date,t:en.temp,p:en.pressure,c:c,n:en.hits.length,i:ci});
-      tot += en.hits.length;
-      en.hits.forEach(function(h,hi) {
-        // Für die virtuelle Scheibe NICHT die Prozentposition des Fotos verwenden.
-        // Das Foto kann beliebige Ränder, Zuschnitt oder Perspektive haben. Die
-        // gespeicherte cm-Position ist die verlässliche gemeinsame Koordinate.
-        var tx = TEMPLATE_CALIB.cx + h.xCm * TEMPLATE_CALIB.sx;
-        var ty = TEMPLATE_CALIB.cy + h.yCm * TEMPLATE_CALIB.sy;
-        // Dieselbe Crop-Geometrie wie beim Hintergrund verwenden, damit
-        // die Treffer trotz entferntem Außenrand exakt auf der Scheibe bleiben.
-        var px = (tx - CROP.x) / CROP.w * S;
-        var py = (ty - CROP.y) / CROP.h * S;
-        var r=8;
-        ctx.beginPath(); ctx.arc(px,py,r+4,0,Math.PI*2);
-        ctx.fillStyle=c+'33'; ctx.fill();
-        ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2);
-        ctx.fillStyle=c; ctx.globalAlpha=0.88; ctx.fill(); ctx.globalAlpha=1;
-        ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.lineWidth=1.3; ctx.stroke();
-        ctx.fillStyle='#0E1318'; ctx.globalAlpha=0.9;
-        ctx.font='bold 8px IBM Plex Mono,monospace';
-        ctx.textAlign='center'; ctx.textBaseline='middle';
-        ctx.fillText(ci,px,py); ctx.globalAlpha=1;
-        ctx.textAlign='start'; ctx.textBaseline='alphabetic';
-        if (showLbl&&hi===0) {
-          var lbl=(h.xCm>=0?'+':'')+h.xCm+'/'+(h.yCm>=0?'+':'')+h.yCm;
-          ctx.font='8px IBM Plex Mono,monospace'; ctx.fillStyle=c; ctx.globalAlpha=.9;
-          var lx=px+r+3, ly=py-2;
-          if(lx+46>S) lx=px-r-48;
-          ctx.fillText(lbl,lx,ly); ctx.globalAlpha=1;
-        }
-      });
+
+  // V6: Die Scheibe im Reiter "Scheibe" wird NICHT mehr aus der eingebetteten
+  // PNG-Vorlage gerendert. Dadurch kann der schwarze Außenrand der Vorlage
+  // unmöglich mit angezeigt werden. Wir zeichnen ausschließlich die eigentliche
+  // weiße 10x10-cm-Scheibe direkt auf das Canvas.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0,0,S,S);
+
+  var step = S / 10;
+  var cx = S / 2, cy = S / 2;
+
+  // 1-cm-Raster
+  ctx.strokeStyle = 'rgba(20,20,20,.62)';
+  ctx.lineWidth = Math.max(1, S / 420);
+  for (var i=0; i<=10; i++) {
+    var p = Math.round(i * step) + .5;
+    ctx.beginPath(); ctx.moveTo(p,0); ctx.lineTo(p,S); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,p); ctx.lineTo(S,p); ctx.stroke();
+  }
+
+  // Hauptachsen
+  ctx.strokeStyle = '#111';
+  ctx.lineWidth = Math.max(3, S / 145);
+  ctx.beginPath(); ctx.moveTo(cx,0); ctx.lineTo(cx,S); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0,cy); ctx.lineTo(S,cy); ctx.stroke();
+
+  // Schwarzer Zielring und Mittelpunkt wie bei der Originalscheibe.
+  ctx.beginPath(); ctx.arc(cx,cy,S*0.305,0,Math.PI*2);
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = Math.max(8, S/34);
+  ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,S*0.058,0,Math.PI*2);
+  ctx.fillStyle = '#000'; ctx.fill();
+
+  // Kleine Scheiben-Nummer oben rechts, ohne Außenrand.
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(S-30,4,27,27);
+  ctx.strokeStyle = '#777';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(S-30.5,4.5,27,27);
+  ctx.fillStyle = '#111';
+  ctx.font = 'bold 18px Arial,sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('1.',S-17,S+1);
+  ctx.textAlign = 'start'; ctx.textBaseline = 'alphabetic';
+
+  var ci=0, leg=[], tot=0;
+  fil.forEach(function(en) {
+    var c = COLORS[ci%COLORS.length]; ci++;
+    leg.push({d:en.date,t:en.temp,p:en.pressure,c:c,n:en.hits.length,i:ci});
+    tot += en.hits.length;
+    en.hits.forEach(function(h,hi) {
+      // Gemeinsame cm-Koordinate: 1 cm = 1 Rasterfeld.
+      var px = cx + h.xCm * step;
+      var py = cy + h.yCm * step;
+      var r=8;
+      ctx.beginPath(); ctx.arc(px,py,r+4,0,Math.PI*2);
+      ctx.fillStyle=c+'33'; ctx.fill();
+      ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2);
+      ctx.fillStyle=c; ctx.globalAlpha=0.88; ctx.fill(); ctx.globalAlpha=1;
+      ctx.strokeStyle='rgba(255,255,255,.55)'; ctx.lineWidth=1.3; ctx.stroke();
+      ctx.fillStyle='#0E1318'; ctx.globalAlpha=0.9;
+      ctx.font='bold 8px IBM Plex Mono,monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(ci,px,py); ctx.globalAlpha=1;
+      ctx.textAlign='start'; ctx.textBaseline='alphabetic';
+      if (showLbl&&hi===0) {
+        var lbl=(h.xCm>=0?'+':'')+h.xCm+'/'+(h.yCm>=0?'+':'')+h.yCm;
+        ctx.font='8px IBM Plex Mono,monospace'; ctx.fillStyle=c; ctx.globalAlpha=.9;
+        var lx=px+r+3, ly=py-2;
+        if(lx+46>S) lx=px-r-48;
+        ctx.fillText(lbl,lx,ly); ctx.globalAlpha=1;
+      }
     });
-    document.getElementById('vt-info').textContent = fil.length===0
-      ? (isNaN(tf)?'— keine Einträge —':'— keine Daten bei '+tf+'°C ±5° —')
-      : fil.length+' Sitzungen · '+tot+' Treffer'+(isNaN(tf)?'':' · '+tf+'°C ±5°');
-    // stats
-    var allH = fil.reduce(function(a,e){return a.concat(e.hits);},[]);
-    var se = document.getElementById('vt-stats');
-    if (fil.length) {
-      var allT=fil.map(function(e){return e.temp;});
-      var mX=allH.length?(allH.reduce(function(s,h){return s+h.xCm;},0)/allH.length).toFixed(1):0;
-      var mY=allH.length?(allH.reduce(function(s,h){return s+h.yCm;},0)/allH.length).toFixed(1):0;
-      se.innerHTML='<div class="stat"><div class="stat-v">'+fil.length+'</div><div class="stat-k">Sitzungen</div></div>'+
-        '<div class="stat"><div class="stat-v">'+tot+'</div><div class="stat-k">Treffer</div></div>'+
-        '<div class="stat"><div class="stat-v">'+Math.min.apply(null,allT)+'–'+Math.max.apply(null,allT)+'°C</div><div class="stat-k">Temp-Bereich</div></div>'+
-        '<div class="stat"><div class="stat-v">'+(mX>=0?'+':'')+mX+'/'+(mY>=0?'+':'')+mY+'</div><div class="stat-k">Ø Abw. cm</div></div>';
-    } else se.innerHTML='';
-    // legend
-    var le=document.getElementById('vt-legend');
-    le.innerHTML=leg.length?leg.map(function(l){
-      return '<div class="leg-row"><span class="leg-dot" style="background:'+l.c+'">'+l.i+'</span>'+
-        '<span>'+l.d+'</span><span class="badge b-green">'+l.t+'°C</span>'+
-        '<span class="badge b-blue">'+l.p+' hPa</span><span style="color:var(--faint)">'+l.n+' Tr.</span></div>';
-    }).join(''):'Noch keine Einträge.';
-  };
-  bg.src = TARGET_SRC;
+  });
+  document.getElementById('vt-info').textContent = fil.length===0
+    ? (isNaN(tf)?'— keine Einträge —':'— keine Daten bei '+tf+'°C ±5° —')
+    : fil.length+' Sitzungen · '+tot+' Treffer'+(isNaN(tf)?'':' · '+tf+'°C ±5°');
+  var allH = fil.reduce(function(a,e){return a.concat(e.hits);},[]);
+  var se = document.getElementById('vt-stats');
+  if (fil.length) {
+    var allT=fil.map(function(e){return e.temp;});
+    var mX=allH.length?(allH.reduce(function(s,h){return s+h.xCm;},0)/allH.length).toFixed(1):0;
+    var mY=allH.length?(allH.reduce(function(s,h){return s+h.yCm;},0)/allH.length).toFixed(1):0;
+    se.innerHTML='<div class="stat"><div class="stat-v">'+fil.length+'</div><div class="stat-k">Sitzungen</div></div>'+ 
+      '<div class="stat"><div class="stat-v">'+tot+'</div><div class="stat-k">Treffer</div></div>'+ 
+      '<div class="stat"><div class="stat-v">'+Math.min.apply(null,allT)+'–'+Math.max.apply(null,allT)+'°C</div><div class="stat-k">Temp-Bereich</div></div>'+ 
+      '<div class="stat"><div class="stat-v">'+(mX>=0?'+':'')+mX+'/'+(mY>=0?'+':'')+mY+'</div><div class="stat-k">Ø Abw. cm</div></div>';
+  } else se.innerHTML='';
+  var le=document.getElementById('vt-legend');
+  le.innerHTML=leg.length?leg.map(function(l){
+    return '<div class="leg-row"><span class="leg-dot" style="background:'+l.c+'">'+l.i+'</span>'+ 
+      '<span>'+l.d+'</span><span class="badge b-green">'+l.t+'°C</span>'+ 
+      '<span class="badge b-blue">'+l.p+' hPa</span><span style="color:var(--faint)">'+l.n+' Tr.</span></div>';
+  }).join(''):'Noch keine Einträge.';
 }
 
 // ── ENTRIES ──
