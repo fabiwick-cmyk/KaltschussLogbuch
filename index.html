@@ -118,7 +118,7 @@ html, body { height: 100%; background: var(--bg); color: var(--txt); font-family
 
 /* ── VIRTUAL SCHEIBE ── */
 #vt-wrap { display: flex; flex-direction: column; align-items: center; }
-#vt-cv { max-width: 100%; border-radius: 0; display: block; background: var(--bg); }
+#vt-cv { max-width: 100%; border: 0; border-radius: 0; display: block; background: #fff; box-shadow: none; }
 #vt-info { font-size: 11px; color: var(--dim); margin-top: 8px; text-align: center; }
 
 /* ── FILTER BAR ── */
@@ -765,9 +765,14 @@ function renderVT() {
   ctx.clearRect(0,0,S,S);
   var bg = new Image();
   bg.onload = function() {
-    // Nur die eigentliche 10×10-cm-Anschussscheibe anzeigen.
-    // Der äußere Bildrand der Vorlagen-Grafik wird nicht mitgerendert.
-    var CROP = { x:64, y:52, w:586, h:586 };
+    // Nur die eigentliche weiße 10×10-cm-Anschussscheibe anzeigen.
+    // Die eingebettete Vorlage enthält außen einen schwarzen Druck-/Bildrand.
+    // Der Ausschnitt wird deshalb aus der tatsächlichen Vorlage bestimmt,
+    // statt einen festen Rand zu übernehmen. So bleibt die Darstellung auch
+    // dann sauber, wenn sich die Vorlage minimal ändert.
+    var CROP = { x:65, y:53, w:585, h:585 };
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0,0,S,S);
     ctx.drawImage(bg, CROP.x, CROP.y, CROP.w, CROP.h, 0, 0, S, S);
     var ci=0, leg=[], tot=0;
     fil.forEach(function(en) {
