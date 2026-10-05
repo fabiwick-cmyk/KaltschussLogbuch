@@ -322,6 +322,10 @@ var TARGET_SRC = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAsAAAAK6CAYAAAA3
 // dem Rasterabstand bestimmt. So hängt die cm-Position nicht mehr von der
 // Gesamtbreite des Fotos oder einem weißen Rand ab.
 var targetCalib = null;
+// Exakte Geometrie der eingebauten 10 x 10-cm-Anschussscheibe.
+// 1 Rasterfeld = 1 cm; Mittelpunkt liegt auf dem dicken Mittelkreuz.
+// Diese Werte beziehen sich auf die Originalgröße der eingebetteten Vorlage (704 x 698 px).
+var TEMPLATE_CALIB = { cx: 356.5, cy: 345.5, sx: 56.65, sy: 56.7 };
 
 // ── STATE ──
 var STORE = 'kaltschuss_v4';
@@ -584,7 +588,6 @@ function findHoleCandidate(gray, W, H, cx, cy, sx, sy) {
   for (var y=y0;y<=y1;y+=step) {
     for (var x=x0;x<=x1;x+=step) {
       var nx=(x-cx)/sx, ny=(y-cy)/sy;
-      var nearGrid = Math.abs(nx-Math.round(nx))<0.055 || Math.abs(ny-Math.round(ny))<0.055;
       var rr=Math.sqrt(nx*nx+ny*ny);
       var nearBull = rr<0.65;
       var nearRing = Math.abs(rr-2.35)<0.30;
@@ -593,12 +596,15 @@ function findHoleCandidate(gray, W, H, cx, cy, sx, sy) {
       var annMean=meanAnnulus(gray,W,H,x,y,holeR,annR);
       var contrast=(annMean-centerMean)/255;
       var axial=compactnessScore(gray,W,H,x,y,holeR,annR);
+      var blob=radialBlobScore(gray,W,H,x,y,sx,sy,false);
 
-      // Variante A: dunkler Einschuss auf heller Papierfläche.
-      if (!nearGrid && !nearBull && !nearRing && contrast>=0.13) {
-        var scoreDark=contrast*0.72+axial*0.28;
+      // Variante A: dunkler Einschuss. Treffer dürfen ausdrücklich AUF einem
+      // Rasterkreuz liegen. Das war in v1 ein Fehler: genau dort wurde ein
+      // echter Treffer vorher pauschal ausgeschlossen.
+      if (!nearBull && !nearRing && contrast>=0.10 && blob>=0.16) {
+        var scoreDark=contrast*0.50+axial*0.15+blob*0.35;
         if (!best || scoreDark>best.score) {
-          best={x:x,y:y,score:scoreDark,confidence:Math.min(1,scoreDark*1.35)};
+          best={x:x,y:y,score:scoreDark,confidence:Math.min(1,scoreDark*1.55)};
         }
       }
 
@@ -620,6 +626,22 @@ function findHoleCandidate(gray, W, H, cx, cy, sx, sy) {
     }
   }
   return best;
+}
+
+function radialBlobScore(g,W,H,cx,cy,sx,sy,bright) {
+  var sc=Math.min(sx,sy);
+  var rIn=Math.max(1.5,sc*0.065);
+  var rMid=Math.max(rIn+1,sc*0.115);
+  var rOut=Math.max(rMid+1,sc*0.19);
+  var inner=meanDisk(g,W,H,cx,cy,rIn);
+  var mid=meanAnnulus(g,W,H,cx,cy,rIn,rMid);
+  var outer=meanAnnulus(g,W,H,cx,cy,rMid,rOut);
+  // Ein Einschuss ist kompakt: die Mitte unterscheidet sich deutlich vom
+  // direkten Umfeld. Das funktioniert auch dann, wenn der Mittelpunkt exakt
+  // auf einer Rasterkreuzung liegt.
+  var s1=bright ? (inner-mid)/255 : (mid-inner)/255;
+  var s2=bright ? (inner-outer)/255 : (outer-inner)/255;
+  return Math.max(0,Math.min(1,0.65*s1+0.35*s2));
 }
 
 function meanDisk(g,W,H,cx,cy,r) {
@@ -719,7 +741,12 @@ function renderVT() {
       leg.push({d:en.date,t:en.temp,p:en.pressure,c:c,n:en.hits.length,i:ci});
       tot += en.hits.length;
       en.hits.forEach(function(h,hi) {
-        var px=h.xPct*S, py=h.yPct*S, r=8;
+        // Für die virtuelle Scheibe NICHT die Prozentposition des Fotos verwenden.
+        // Das Foto kann beliebige Ränder, Zuschnitt oder Perspektive haben. Die
+        // gespeicherte cm-Position ist die verlässliche gemeinsame Koordinate.
+        var tx = TEMPLATE_CALIB.cx + h.xCm * TEMPLATE_CALIB.sx;
+        var ty = TEMPLATE_CALIB.cy + h.yCm * TEMPLATE_CALIB.sy;
+        var px = tx / 704 * S, py = ty / 698 * S, r=8;
         ctx.beginPath(); ctx.arc(px,py,r+4,0,Math.PI*2);
         ctx.fillStyle=c+'33'; ctx.fill();
         ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2);
