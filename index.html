@@ -453,46 +453,53 @@ function updCount() { document.getElementById('hit-count').textContent = curHits
 // des 10 x 10 cm-Rasters und unterdrücken bekannte Druckelemente (Raster,
 // Mittelkreuz und Ringschablone) soweit möglich.
 function detect(dataUrl) {
-  var st = document.getElementById('det-status');
-  st.className = 'status detecting'; st.style.display = 'flex';
-  st.innerHTML = '<div class="spin"></div><span>Einschuss wird automatisch erkannt…</span>';
-
-  var img = new Image();
-  img.onload = function() {
-    try {
-      var result = detectSingleHit(img);
-      if (!result || result.confidence < 0.32) throw new Error('uncertain');
-
-      targetCalib = result.calib;
-      var W = img.naturalWidth, H = img.naturalHeight;
-      var xP = result.x / W, yP = result.y / H;
-      var cm = toCm(xP, yP);
-      curHits = [{xPct:xP, yPct:yP, xCm:cm.xCm, yCm:cm.yCm, auto:true}];
-      drawDots(); updCount();
-
-      st.className = 'status done';
-      st.innerHTML = '<span>&#10003; 1 Einschuss automatisch erkannt · ' +
-        (cm.xCm >= 0 ? '+' : '') + cm.xCm + ' / ' +
-        (cm.yCm >= 0 ? '+' : '') + cm.yCm + ' cm</span>';
-      document.getElementById('coord-info').textContent =
-        'Automatisch erkannt · Tippen auf eine andere Stelle ersetzt die Markierung';
-    } catch(e) {
-      // Manuelle Markierung bleibt vollständig verfügbar.
-      targetCalib = null;
-      st.className = 'status err';
-      st.innerHTML = '<span>Einschuss nicht sicher erkannt – bitte einmal auf den Einschuss tippen</span>';
-      document.getElementById('coord-info').textContent =
-        'Automatische Erkennung unsicher · Tippen = Treffer manuell setzen';
-    }
+  var st=document.getElementById('det-status');
+  st.className='status detecting'; st.style.display='flex';
+  st.innerHTML='<div class="spin"></div><span>Einschuss wird automatisch erkannt…</span>';
+  var img=new Image();
+  img.onload=function(){
+    var refImg=new Image();
+    refImg.onload=function(){
+      try {
+        var result=detectSingleHit(img,buildReferenceGray(refImg));
+        targetCalib=result.calib;
+        var W=img.naturalWidth,H=img.naturalHeight;
+        var xP=result.x/W,yP=result.y/H,cm=toCm(xP,yP);
+        curHits=[{xPct:xP,yPct:yP,xCm:cm.xCm,yCm:cm.yCm,auto:true}];
+        drawDots();updCount();
+        st.className='status done';
+        st.innerHTML='<span>&#10003; 1 Einschuss automatisch erkannt · '+(cm.xCm>=0?'+':'')+cm.xCm+' / '+(cm.yCm>=0?'+':'')+cm.yCm+' cm</span>';
+        document.getElementById('coord-info').textContent='Automatisch erkannt · Tippen auf eine andere Stelle ersetzt die Markierung';
+      } catch(e) {
+        targetCalib=null;
+        st.className='status err';
+        st.innerHTML='<span>Einschuss nicht sicher erkannt – bitte einmal auf den Einschuss tippen</span>';
+        document.getElementById('coord-info').textContent='Automatische Erkennung unsicher · Tippen = Treffer manuell setzen';
+      }
+    };
+    refImg.onerror=function(){
+      st.className='status err';
+      st.innerHTML='<span>Referenzscheibe konnte nicht geladen werden – bitte manuell tippen</span>';
+    };
+    refImg.src=TARGET_SRC;
   };
-  img.onerror = function() {
-    st.className = 'status err';
-    st.innerHTML = '<span>Bild konnte nicht analysiert werden – bitte manuell tippen</span>';
+  img.onerror=function(){
+    st.className='status err';
+    st.innerHTML='<span>Bild konnte nicht analysiert werden – bitte manuell tippen</span>';
   };
-  img.src = dataUrl;
+  img.src=dataUrl;
 }
 
-function detectSingleHit(sourceImg) {
+function buildReferenceGray(im){
+  var c=document.createElement('canvas');
+  c.width=im.naturalWidth; c.height=im.naturalHeight;
+  var x=c.getContext('2d',{willReadFrequently:true}); x.drawImage(im,0,0);
+  var d=x.getImageData(0,0,c.width,c.height).data, g=new Float32Array(c.width*c.height);
+  for(var i=0,j=0;i<g.length;i++,j+=4) g[i]=0.299*d[j]+0.587*d[j+1]+0.114*d[j+2];
+  return {g:g,w:c.width,h:c.height};
+}
+
+function detectSingleHit(sourceImg, ref) {
   var MAX = 1200;
   var scale = Math.min(1, MAX / Math.max(sourceImg.naturalWidth, sourceImg.naturalHeight));
   var W = Math.max(1, Math.round(sourceImg.naturalWidth * scale));
@@ -503,40 +510,113 @@ function detectSingleHit(sourceImg) {
   ctx.drawImage(sourceImg, 0, 0, W, H);
   var data = ctx.getImageData(0,0,W,H).data;
   var gray = new Float32Array(W*H);
-  for (var i=0,j=0;i<gray.length;i++,j+=4) {
-    gray[i] = 0.299*data[j] + 0.587*data[j+1] + 0.114*data[j+2];
-  }
+  for (var i=0,j=0;i<gray.length;i++,j+=4) gray[i]=0.299*data[j]+0.587*data[j+1]+0.114*data[j+2];
 
+  // 1) Geometrie der fotografierten Scheibe bestimmen.
   var projX = new Float32Array(W), projY = new Float32Array(H);
-  var xA = Math.floor(W*0.16), xB = Math.ceil(W*0.84);
-  var yA = Math.floor(H*0.16), yB = Math.ceil(H*0.84);
-  // Dunkelheitsprojektionen im zentralen Bereich. Dadurch werden schwarze
-  // Foto-Ränder nicht als Rasterlinien interpretiert.
+  var xA=Math.floor(W*0.12), xB=Math.ceil(W*0.88), yA=Math.floor(H*0.10), yB=Math.ceil(H*0.90);
   for (var y=yA;y<yB;y++) {
     var row=y*W;
-    for (var x=0;x<W;x++) if (gray[row+x] < 135) projX[x]++;
+    for (var x=xA;x<xB;x++) if (gray[row+x] < 115) { projX[x]++; projY[y]++; }
   }
-  for (var x= xA;x<xB;x++) {
-    for (var y=0;y<H;y++) if (gray[y*W+x] < 135) projY[y]++;
+  smoothProjection(projX, 4); smoothProjection(projY, 4);
+  var cx=strongestCentralPeak(projX,W), cy=strongestCentralPeak(projY,H);
+  if (cx<0||cy<0) throw new Error('no-center');
+  var sx=fitGridAxis(projX,cx,W), sy=fitGridAxis(projY,cy,H);
+  if (!(sx>10&&sy>10)) throw new Error('no-grid');
+
+  // Die Referenz ist die exakt eingebettete Anschussscheibe. Dadurch werden
+  // Raster, Ring und Mittelkreuz nicht als Treffer interpretiert: gesucht
+  // wird nur nach einer lokalen Abweichung vom bekannten Druckbild.
+  var ref=ref;
+  var refW=ref.w, refH=ref.h;
+  var refCx=357.0, refCy=344.5;
+  var refSx=57.45, refSy=57.45;
+
+  var best=null;
+  var minS=Math.min(sx,sy);
+  var step=Math.max(2,Math.round(minS/20));
+  var x0=Math.max(10,Math.floor(cx-5.0*sx)), x1=Math.min(W-10,Math.ceil(cx+5.0*sx));
+  var y0=Math.max(10,Math.floor(cy-5.0*sy)), y1=Math.min(H-10,Math.ceil(cy+5.0*sy));
+  var patchR=Math.max(4,Math.round(minS*0.13));
+
+  for(var yy=y0;yy<=y1;yy+=step) {
+    for(var xx=x0;xx<=x1;xx+=step) {
+      var sc=referenceDifferenceScore(gray,W,H,xx,yy,cx,cy,sx,sy,ref,refCx,refCy,refSx,refSy,patchR);
+      if(!best||sc.score>best.score) best={x:xx,y:yy,score:sc.score,raw:sc.raw};
+    }
   }
-  smoothProjection(projX, 5);
-  smoothProjection(projY, 5);
+  if(!best || best.score<0.18) throw new Error('no-confident-difference');
 
-  var cx = strongestCentralPeak(projX, W);
-  var cy = strongestCentralPeak(projY, H);
-  if (cx < 0 || cy < 0) throw new Error('no-center');
+  // Feinsuche um den besten Kandidaten auf Pixelebene.
+  var fx0=Math.max(x0,best.x-step*2), fx1=Math.min(x1,best.x+step*2);
+  var fy0=Math.max(y0,best.y-step*2), fy1=Math.min(y1,best.y+step*2);
+  var fine=best;
+  for(var fy=fy0;fy<=fy1;fy++) for(var fx=fx0;fx<=fx1;fx++) {
+    var fs=referenceDifferenceScore(gray,W,H,fx,fy,cx,cy,sx,sy,ref,refCx,refCy,refSx,refSy,patchR);
+    if(fs.score>fine.score) fine={x:fx,y:fy,score:fs.score,raw:fs.raw};
+  }
 
-  var sx = findGridSpacing(projX, cx, W);
-  var sy = findGridSpacing(projY, cy, H);
-  if (!(sx > 8 && sy > 8)) throw new Error('no-grid');
+  // Lokale Lochprüfung als zweites Signal. Sie verhindert, dass ein kleiner
+  // Registrierungsfehler an einer langen Linie als Treffer gewinnt.
+  var hole=localHoleScore(gray,W,H,fine.x,fine.y,patchR);
+  var confidence=Math.min(1, Math.max(0, 0.68*fine.score + 0.32*hole));
+  if(confidence<0.24) throw new Error('weak-candidate');
 
-  // Skalierung zurück auf die Originalpixel.
-  var calib = {cx:cx/scale, cy:cy/scale, sx:sx/scale, sy:sy/scale};
+  var calib={cx:cx/scale,cy:cy/scale,sx:sx/scale,sy:sy/scale};
+  return {x:fine.x/scale,y:fine.y/scale,confidence:confidence,calib:calib};
+}
 
-  var best = findHoleCandidate(gray, W, H, cx, cy, sx, sy);
-  if (!best) throw new Error('no-hole');
+function referenceDifferenceScore(src,W,H,x,y,cx,cy,sx,sy,ref,rcx,rcy,rsx,rsy,r) {
+  var vals=[];
+  var sumS=0,sumR=0,sumSS=0,sumSR=0,n=0;
+  for(var dy=-r;dy<=r;dy++) for(var dx=-r;dx<=r;dx++) {
+    if(dx*dx+dy*dy>r*r) continue;
+    var px=Math.round(x+dx),py=Math.round(y+dy);
+    if(px<0||py<0||px>=W||py>=H) continue;
+    var rx=Math.round(rcx+(px-cx)*(rsx/sx));
+    var ry=Math.round(rcy+(py-cy)*(rsy/sy));
+    if(rx<0||ry<0||rx>=ref.w||ry>=ref.h) continue;
+    var sv=src[py*W+px],rv=ref.g[ry*ref.w+rx];
+    vals.push({dx:dx,dy:dy,sv:sv,rv:rv});
+    sumS+=sv;sumR+=rv;sumSS+=sv*sv;sumSR+=sv*rv;n++;
+  }
+  if(n<20) return {score:0,raw:0};
+  var meanS=sumS/n,meanR=sumR/n;
+  var den=sumSS-n*meanS*meanS;
+  var a=den>1?(sumSR-n*meanS*meanR)/den:1;
+  a=Math.max(0.35,Math.min(2.2,a));
+  var b=meanR-a*meanS;
+  var inner=0,innerW=0,ann=0,annW=0,total=0,totalW=0;
+  var innerR=r*0.55, annR1=r*0.78, annR2=r*1.18;
+  for(var i=0;i<vals.length;i++) {
+    var q=vals[i], d=Math.abs((a*q.sv+b)-q.rv)/255;
+    var rr=q.dx*q.dx+q.dy*q.dy;
+    if(rr<=innerR*innerR){inner+=d;innerW++;}
+    else if(rr>annR1*annR1&&rr<=annR2*annR2){ann+=d;annW++;}
+    total+=d;totalW++;
+  }
+  var im=innerW?inner/innerW:0, am=annW?ann/annW:0;
+  var concentration=Math.max(0,im-am);
+  var meanDiff=totalW?total/totalW:0;
+  // Der eigentliche Einschuss erzeugt eine konzentrierte Abweichung. Ein
+  // Raster-/Ringversatz erzeugt dagegen meist ähnlich starke Abweichungen
+  // auch im äußeren Bereich und bekommt deshalb eine deutlich kleinere Wertung.
+  var score=Math.min(1, concentration*2.8 + Math.max(0,meanDiff-0.08)*0.35);
+  return {score:score,raw:meanDiff};
+}
 
-  return {x:best.x/scale, y:best.y/scale, confidence:best.confidence, calib:calib};
+function pxGrad(g,W,H,x,y){
+  var gx=Math.abs(g[y*W+x+1]-g[y*W+x-1]);
+  var gy=Math.abs(g[(y+1)*W+x]-g[(y-1)*W+x]);
+  return Math.sqrt(gx*gx+gy*gy);
+}
+
+function localHoleScore(g,W,H,cx,cy,r){
+  var inner=meanDisk(g,W,H,cx,cy,Math.max(2,r*0.55));
+  var ann=meanAnnulus(g,W,H,cx,cy,Math.max(2,r*0.75),Math.max(3,r*1.25));
+  var d=Math.abs(inner-ann)/255;
+  return Math.min(1,d*2.2);
 }
 
 function smoothProjection(a, radius) {
@@ -551,97 +631,48 @@ function smoothProjection(a, radius) {
 
 function strongestCentralPeak(p, n) {
   var lo=Math.floor(n*0.30), hi=Math.ceil(n*0.70), best=-1, val=-1;
-  for (var i=lo;i<hi;i++) {
-    if (p[i]>val) {val=p[i];best=i;}
-  }
+  for (var i=lo;i<hi;i++) if(p[i]>val){val=p[i];best=i;}
   return best;
+}
+
+function fitGridAxis(p, center, n) {
+  var approx=findGridSpacing(p,center,n);
+  if(!(approx>8)) return approx;
+  var pts=[];
+  for(var k=-5;k<=5;k++) {
+    var expected=center+k*approx;
+    var lo=Math.max(2,Math.floor(expected-approx*0.30));
+    var hi=Math.min(n-3,Math.ceil(expected+approx*0.30));
+    var best=lo,bv=-1;
+    for(var i=lo;i<=hi;i++) if(p[i]>bv){bv=p[i];best=i;}
+    pts.push({k:k,p:best,v:bv});
+  }
+  var usable=pts.filter(function(q){return q.v>0;});
+  if(usable.length<7) return approx;
+  var sk=0,sp=0,skk=0,skp=0;
+  usable.forEach(function(q){sk+=q.k;sp+=q.p;skk+=q.k*q.k;skp+=q.k*q.p;});
+  var den=usable.length*skk-sk*sk;
+  if(!den) return approx;
+  var slope=(usable.length*skp-sk*sp)/den;
+  var intercept=(sp-slope*sk)/usable.length;
+  if(!(slope>approx*0.75&&slope<approx*1.25)) return approx;
+  return slope;
 }
 
 function findGridSpacing(p, center, n) {
-  var bestL=n*0.08, bestScore=-Infinity;
-  // 10 cm auf 10 Kästchen: reale Fotos dürfen deutlich unterschiedlich
-  // beschnitten sein. Deshalb wird der Rasterabstand nicht fest angenommen.
-  for (var frac=0.055; frac<=0.115; frac+=0.001) {
-    var L=n*frac, score=0, used=0;
-    for (var k=-5;k<=5;k++) {
+  var bestL=n*0.08,bestScore=-Infinity;
+  for(var frac=0.055;frac<=0.115;frac+=0.001){
+    var L=n*frac,score=0,used=0;
+    for(var k=-5;k<=5;k++){
       var pos=center+k*L;
-      if (pos<3 || pos>=n-3) continue;
-      var lo=Math.max(0,Math.round(pos-3)), hi=Math.min(n,Math.round(pos+4));
-      var mx=0;
-      for (var q=lo;q<hi;q++) if (p[q]>mx) mx=p[q];
-      score += mx; used++;
+      if(pos<3||pos>=n-3)continue;
+      var lo=Math.max(0,Math.round(pos-3)),hi=Math.min(n,Math.round(pos+4)),mx=0;
+      for(var q=lo;q<hi;q++)if(p[q]>mx)mx=p[q];
+      score+=mx;used++;
     }
-    if (used>=9 && score>bestScore) {bestScore=score;bestL=L;}
+    if(used>=9&&score>bestScore){bestScore=score;bestL=L;}
   }
   return bestL;
-}
-
-function findHoleCandidate(gray, W, H, cx, cy, sx, sy) {
-  var step=Math.max(1,Math.round(Math.min(sx,sy)/18));
-  var best=null;
-  // Nur innerhalb der eigentlichen 10x10-cm-Fläche suchen.
-  var x0=Math.max(8,Math.floor(cx-5.05*sx)), x1=Math.min(W-8,Math.ceil(cx+5.05*sx));
-  var y0=Math.max(8,Math.floor(cy-5.05*sy)), y1=Math.min(H-8,Math.ceil(cy+5.05*sy));
-  var holeR=Math.max(2,Math.min(sx,sy)*0.075);
-  var annR=holeR*2.2;
-
-  for (var y=y0;y<=y1;y+=step) {
-    for (var x=x0;x<=x1;x+=step) {
-      var nx=(x-cx)/sx, ny=(y-cy)/sy;
-      var rr=Math.sqrt(nx*nx+ny*ny);
-      var nearBull = rr<0.65;
-      var nearRing = Math.abs(rr-2.35)<0.30;
-
-      var centerMean=meanDisk(gray,W,H,x,y,holeR);
-      var annMean=meanAnnulus(gray,W,H,x,y,holeR,annR);
-      var contrast=(annMean-centerMean)/255;
-      var axial=compactnessScore(gray,W,H,x,y,holeR,annR);
-      var blob=radialBlobScore(gray,W,H,x,y,sx,sy,false);
-
-      // Variante A: dunkler Einschuss. Treffer dürfen ausdrücklich AUF einem
-      // Rasterkreuz liegen. Das war in v1 ein Fehler: genau dort wurde ein
-      // echter Treffer vorher pauschal ausgeschlossen.
-      if (!nearBull && !nearRing && contrast>=0.10 && blob>=0.16) {
-        var scoreDark=contrast*0.50+axial*0.15+blob*0.35;
-        if (!best || scoreDark>best.score) {
-          best={x:x,y:y,score:scoreDark,confidence:Math.min(1,scoreDark*1.55)};
-        }
-      }
-
-      // Variante B: heller Durchschuss-/Papierbereich in einem dunklen
-      // Druckelement (z.B. Ring, Mittelbereich oder Rasterlinie).
-      // Damit bleiben Treffer auf schwarzen Bereichen grundsätzlich erkennbar.
-      var brightContrast=(centerMean-annMean)/255;
-      if (brightContrast>=0.16) {
-        var compactBright=compactnessScoreBright(gray,W,H,x,y,holeR,annR);
-        var scoreBright=brightContrast*0.72+compactBright*0.28;
-        // Etwas höhere Schwelle auf dem normalen weißen Papier, damit
-        // Schatten/Reflexe nicht leicht als Treffer gewertet werden.
-        if ((nearGrid||nearBull||nearRing) && scoreBright>=0.18) {
-          if (!best || scoreBright>best.score) {
-            best={x:x,y:y,score:scoreBright,confidence:Math.min(1,scoreBright*1.25)};
-          }
-        }
-      }
-    }
-  }
-  return best;
-}
-
-function radialBlobScore(g,W,H,cx,cy,sx,sy,bright) {
-  var sc=Math.min(sx,sy);
-  var rIn=Math.max(1.5,sc*0.065);
-  var rMid=Math.max(rIn+1,sc*0.115);
-  var rOut=Math.max(rMid+1,sc*0.19);
-  var inner=meanDisk(g,W,H,cx,cy,rIn);
-  var mid=meanAnnulus(g,W,H,cx,cy,rIn,rMid);
-  var outer=meanAnnulus(g,W,H,cx,cy,rMid,rOut);
-  // Ein Einschuss ist kompakt: die Mitte unterscheidet sich deutlich vom
-  // direkten Umfeld. Das funktioniert auch dann, wenn der Mittelpunkt exakt
-  // auf einer Rasterkreuzung liegt.
-  var s1=bright ? (inner-mid)/255 : (mid-inner)/255;
-  var s2=bright ? (inner-outer)/255 : (outer-inner)/255;
-  return Math.max(0,Math.min(1,0.65*s1+0.35*s2));
 }
 
 function meanDisk(g,W,H,cx,cy,r) {
