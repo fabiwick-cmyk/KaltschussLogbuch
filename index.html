@@ -111,9 +111,9 @@ html, body { height: 100%; background: var(--bg); color: var(--txt); font-family
 
 /* ── TARGET AREA ── */
 #target-area { margin-top: 14px; }
-#target-wrap { position: relative; display: block; width: 100%; cursor: crosshair; user-select: none; touch-action: none; }
-#target-wrap img { display: block; width: 100%; border-radius: 4px; border: 1px solid var(--brd); }
-#overlay-cv { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; border-radius: 4px; }
+#target-wrap { position: relative; display: block; width: 100%; cursor: crosshair; user-select: none; touch-action: none; overflow:hidden; }
+#target-wrap img { display: block; width: 100%; border-radius: 4px; border: 1px solid var(--brd); transform-origin: 0 0; }
+#overlay-cv { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; border-radius: 4px; transform-origin: 0 0; }
 #coord-info { font-size: 11px; color: var(--dim); margin-top: 7px; min-height: 16px; }
 #hit-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
 #hit-count { font-size: 11px; color: var(--dim); }
@@ -222,7 +222,7 @@ html, body { height: 100%; background: var(--bg); color: var(--txt); font-family
               <img id="target-img" src="" alt="Scheibe" onload="onImgLoad()">
               <canvas id="overlay-cv"></canvas>
             </div>
-            <div id="coord-info">Tippen = Treffer manuell hinzufügen</div>
+            <div class="row2" style="margin-top:8px"><button class="btn btn-ghost" onclick="zoomBy(1.5)">＋ Zoom</button><button class="btn btn-ghost" onclick="zoomBy(1/1.5)">− Zoom</button><button class="btn btn-ghost" onclick="resetZoom()">Ansicht zurücksetzen</button></div><div id="coord-info">Tippen = Treffer manuell hinzufügen · Zwei Finger = Zoom</div>
             <div id="hit-bar">
               <span id="hit-count">0 Treffer</span>
               <button class="btn btn-ghost" onclick="rmLast()">Letzten löschen</button>
@@ -274,7 +274,7 @@ html, body { height: 100%; background: var(--bg); color: var(--txt); font-family
       <!-- TAB: EINTRAEGE -->
       <div id="tab-entries" style="display:none">
         <div class="card">
-          <div class="card-title">ALLE EINTRÄGE</div>
+          <div class="card-title">DATENVERWALTUNG</div><div class="row2"><button class="btn btn-brass" onclick="exportBackup()">Backup exportieren</button><button class="btn btn-ghost" onclick="document.getElementById('backup-in').click()">Backup importieren</button></div><input id="backup-in" type="file" accept=".json,application/json" style="display:none" onchange="importBackup(event)"><div style="font-size:10px;color:var(--dim);margin-top:8px">Import: vorhandene Daten ersetzen oder Backup zu bestehenden Einträgen hinzufügen.</div></div><div class="card"><div class="card-title">ALLE EINTRÄGE</div>
           <div id="entries-list"><div style="color:var(--faint);text-align:center;padding:30px 0">Noch keine Einträge.</div></div>
         </div>
       </div>
@@ -323,11 +323,15 @@ var CM_PER_PCT = 28 / (0.885 * 100); // cm per 1% of image width
 
 // ── STATE ──
 var STORE = 'kaltschuss_v4';
+var DB_NAME = 'KaltschussLogbuchDB', DB_STORE = 'entries';
 var entries = [];
-try { entries = JSON.parse(localStorage.getItem(STORE) || '[]'); } catch(e) {}
 var curImg = null, curHits = [];
-
-function persist() { try { localStorage.setItem(STORE, JSON.stringify(entries)); } catch(e) {} }
+var zoom = 1, panX = 0, panY = 0, pointers = new Map(), gestureMoved = false, gestureStart = null;
+function openDB() { return new Promise(function(resolve,reject) { var req=indexedDB.open(DB_NAME,1); req.onupgradeneeded=function(){ if(!req.result.objectStoreNames.contains(DB_STORE)) req.result.createObjectStore(DB_STORE,{keyPath:'id'}); }; req.onsuccess=function(){resolve(req.result)}; req.onerror=function(){reject(req.error)}; }); }
+async function dbGetAll() { var db=await openDB(); return new Promise(function(resolve,reject){var tx=db.transaction(DB_STORE,'readonly'),r=tx.objectStore(DB_STORE).getAll();r.onsuccess=function(){resolve(r.result||[])};r.onerror=function(){reject(r.error)};tx.oncomplete=function(){db.close()};}); }
+async function dbReplace(list) { var db=await openDB(); return new Promise(function(resolve,reject){var tx=db.transaction(DB_STORE,'readwrite'),st=tx.objectStore(DB_STORE);st.clear();list.forEach(function(e){st.put(e)});tx.oncomplete=function(){db.close();resolve()};tx.onerror=function(){db.close();reject(tx.error)};tx.onabort=function(){db.close();reject(tx.error)};}); }
+async function persist() { await dbReplace(entries); try { localStorage.setItem(STORE, JSON.stringify(entries)); } catch(e) {} }
+async function initStorage() { try { entries=await dbGetAll(); if(!entries.length) { var legacy=[]; try { legacy=JSON.parse(localStorage.getItem(STORE)||'[]'); } catch(e) {} if(Array.isArray(legacy)&&legacy.length){entries=legacy; await dbReplace(entries); toast('Vorhandene Einträge übernommen ✓');} } } catch(e) { try { entries=JSON.parse(localStorage.getItem(STORE)||'[]'); } catch(_) { entries=[]; } toast('Lokale Datenbank konnte nicht geöffnet werden'); } updHdr(); renderEntries(); }
 
 // ── TABS ──
 var TABS = ['log','scheibe','prog','entries'];
@@ -375,23 +379,20 @@ function onImgLoad() {
   var cv = document.getElementById('overlay-cv');
   cv.width = img.naturalWidth;
   cv.height = img.naturalHeight;
+  applyTransform();
   drawDots();
 }
 
 // ── TOUCH / CLICK ON WRAPPER ──
-document.getElementById('target-wrap').addEventListener('click', function(e) {
-  var wrap = document.getElementById('target-wrap');
-  var rect = wrap.getBoundingClientRect();
-  var xP = (e.clientX - rect.left) / rect.width;
-  var yP = (e.clientY - rect.top) / rect.height;
-  var cm = toCm(xP, yP);
-  curHits.push({ xPct: xP, yPct: yP, xCm: cm.xCm, yCm: cm.yCm });
-  drawDots(); updCount();
-  var xD = cm.xCm > 0 ? 're' : cm.xCm < 0 ? 'li' : '0';
-  var yD = cm.yCm > 0 ? 'tief' : cm.yCm < 0 ? 'hoch' : '0';
-  document.getElementById('coord-info').textContent =
-    'Letzter: ' + Math.abs(cm.xCm) + ' cm ' + xD + ' / ' + Math.abs(cm.yCm) + ' cm ' + yD;
-});
+var targetWrap = document.getElementById('target-wrap');
+function applyTransform(){ ['target-img','overlay-cv'].forEach(function(id){document.getElementById(id).style.transform='translate('+panX+'px,'+panY+'px) scale('+zoom+')';}); }
+function zoomBy(f){ zoom=Math.max(1,Math.min(5,zoom*f)); if(zoom===1){panX=0;panY=0;} applyTransform(); }
+function resetZoom(){zoom=1;panX=0;panY=0;applyTransform();}
+targetWrap.addEventListener('pointerdown',function(e){targetWrap.setPointerCapture(e.pointerId);pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});gestureMoved=false;if(pointers.size===1)gestureStart={x:e.clientX,y:e.clientY,panX:panX,panY:panY};else if(pointers.size===2){var a=Array.from(pointers.values());gestureStart={distance:Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y),zoom:zoom,centerX:(a[0].x+a[1].x)/2,centerY:(a[0].y+a[1].y)/2,panX:panX,panY:panY};}});
+targetWrap.addEventListener('pointermove',function(e){if(!pointers.has(e.pointerId))return;pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});if(pointers.size===1&&gestureStart){var p=pointers.get(e.pointerId),dx=p.x-gestureStart.x,dy=p.y-gestureStart.y;if(Math.abs(dx)+Math.abs(dy)>7)gestureMoved=true;if(zoom>1&&gestureMoved){panX=gestureStart.panX+dx;panY=gestureStart.panY+dy;applyTransform();}}else if(pointers.size===2&&gestureStart){var a=Array.from(pointers.values()),d=Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y);zoom=Math.max(1,Math.min(5,gestureStart.zoom*d/Math.max(1,gestureStart.distance)));panX=gestureStart.panX+( (a[0].x+a[1].x)/2-gestureStart.centerX );panY=gestureStart.panY+( (a[0].y+a[1].y)/2-gestureStart.centerY );if(zoom===1){panX=0;panY=0;}gestureMoved=true;applyTransform();}});
+function finishPointer(e){var wasMoved=gestureMoved;var count=pointers.size;pointers.delete(e.pointerId);if(pointers.size===0){if(!wasMoved&&count===1)placeHit(e);gestureStart=null;gestureMoved=false;}else if(pointers.size===1){var p=Array.from(pointers.values())[0];gestureStart={x:p.x,y:p.y,panX:panX,panY:panY};}}
+targetWrap.addEventListener('pointerup',finishPointer);targetWrap.addEventListener('pointercancel',function(e){pointers.delete(e.pointerId);gestureStart=null;});
+function placeHit(e){var rect=targetWrap.getBoundingClientRect();var baseW=targetWrap.clientWidth;var baseH=document.getElementById('target-img').clientHeight;var xP=(e.clientX-rect.left-panX)/(baseW*zoom);var yP=(e.clientY-rect.top-panY)/(baseH*zoom);if(xP<0||xP>1||yP<0||yP>1)return;var cm=toCm(xP,yP);curHits.push({xPct:xP,yPct:yP,xCm:cm.xCm,yCm:cm.yCm});drawDots();updCount();var xD=cm.xCm>0?'rechts':cm.xCm<0?'links':'zentral';var yD=cm.yCm>0?'unten/tief':cm.yCm<0?'oben/hoch':'zentral';document.getElementById('coord-info').textContent='Letzter Treffer: X '+(cm.xCm>0?'+':'')+cm.xCm+' cm ('+xD+') · Y '+(cm.yCm>0?'+':'')+cm.yCm+' cm ('+yD+')';}
 
 // ── DRAW DOTS ──
 var COLORS = ['#FF3333','#FF8800','#FFDD00','#44FF88','#4499FF','#CC44FF','#FF44AA'];
@@ -440,7 +441,7 @@ async function detect(dataUrl) {
 }
 
 // ── SAVE ──
-function saveEntry() {
+async function saveEntry() {
   var temp = parseFloat(document.getElementById('f-temp').value);
   var pres = parseFloat(document.getElementById('f-pres').value);
   if (isNaN(temp)||isNaN(pres)) { toast('Temperatur und Luftdruck fehlen!'); return; }
@@ -456,8 +457,8 @@ function saveEntry() {
     notes: document.getElementById('f-notes').value||'',
     img: curImg, hits: curHits.slice()
   });
-  persist(); updHdr();
-  curImg=null; curHits=[];
+  try { await persist(); } catch(e) { toast('Speichern fehlgeschlagen – bitte Backup/ Speicher prüfen'); return; } updHdr(); renderEntries();
+  curImg=null; resetZoom(); curHits=[];
   document.getElementById('target-area').style.display='none';
   document.getElementById('det-status').style.display='none';
   document.getElementById('uz-icon').textContent='⊕';
@@ -561,9 +562,9 @@ function renderEntries() {
       '</div>';
   }).join('');
 }
-function delEntry(id) {
+async function delEntry(id) {
   if (!confirm('Eintrag löschen?')) return;
-  entries=entries.filter(function(e){return e.id!==id;}); persist(); updHdr(); renderEntries();
+  entries=entries.filter(function(e){return e.id!==id;}); persist().then(function(){updHdr();renderEntries();}).catch(function(){toast('Löschen konnte nicht gespeichert werden');});
 }
 
 // ── PROGNOSE ──
@@ -612,6 +613,11 @@ function renderSim() {
   }).join('');
 }
 
+// ── BACKUP ──
+function downloadText(filename,text){var blob=new Blob([text],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(function(){URL.revokeObjectURL(url);},1500);}
+function exportBackup(){var payload={app:'Kaltschuss Logbuch',formatVersion:1,exportedAt:new Date().toISOString(),entries:entries};downloadText('Kaltschuss-Backup-'+new Date().toISOString().slice(0,10)+'.json',JSON.stringify(payload));toast('Backup wird erstellt …');}
+async function importBackup(ev){var file=ev.target.files&&ev.target.files[0];if(!file)return;try{var data=JSON.parse(await file.text());var list=Array.isArray(data)?data:data.entries;if(!Array.isArray(list))throw new Error('Format');if(!list.every(function(e){return e&&typeof e==='object'&&Array.isArray(e.hits);}))throw new Error('Einträge');var mode=prompt('Backup importieren: 1 = aktuelle Daten ERSETZEN, 2 = zu bestehenden Einträgen HINZUFÜGEN. Eingabe 1 oder 2:','1');if(mode!=='1'&&mode!=='2')return;var incoming=list.map(function(e){var copy=Object.assign({},e);if(mode==='2')copy.id=Date.now()+Math.floor(Math.random()*1000000);return copy;});var next=mode==='1'?incoming:incoming.concat(entries);if(!confirm((mode==='1'?'Aktuelle Einträge ersetzen':'Einträge hinzufügen')+'? Importierte Einträge: '+incoming.length+'.'))return;await dbReplace(next);entries=next;try{localStorage.setItem(STORE,JSON.stringify(entries));}catch(e){}updHdr();renderEntries();toast('Backup erfolgreich importiert ✓');}catch(e){alert('Backup konnte nicht importiert werden. Bitte eine unveränderte Kaltschuss-Backup-JSON-Datei auswählen.');}finally{ev.target.value='';}}
+
 // ── UTILS ──
 function updHdr() { document.getElementById('hdr-count').textContent=entries.length+' Einträge'; }
 function toast(msg) {
@@ -621,7 +627,7 @@ function toast(msg) {
 
 // ── INIT ──
 document.getElementById('f-date').value=new Date().toISOString().slice(0,10);
-updHdr();
+initStorage();
 if ('serviceWorker' in navigator) { window.addEventListener('load', function(){ navigator.serviceWorker.register('service-worker.js').catch(function(){}); }); }
 </script>
 </body>

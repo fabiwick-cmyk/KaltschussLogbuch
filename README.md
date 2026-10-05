@@ -1,25 +1,15 @@
 # Kaltschuss Logbuch – PWA
 
-Diese Version basiert auf der vorhandenen HTML-App und ergänzt sie um die PWA-Schicht:
-- installierbares App-Icon
-- Standalone-Darstellung
-- Offline-Cache per Service Worker
-- lokale Datenhaltung wie bisher per localStorage
-- Fotoaufnahme/-auswahl und manuelle Treffererfassung
+## Installation auf dem iPhone
+1. Lade den kompletten Inhalt dieses Ordners auf einen HTTPS-Webhost hoch. Die Dateien `index.html`, `manifest.webmanifest`, `service-worker.js` und der Ordner `icons` müssen zusammen im selben Verzeichnis liegen.
+2. Öffne die HTTPS-Adresse in Safari.
+3. Tippe auf „Teilen“ → „Zum Home-Bildschirm“ → „Hinzufügen“.
 
-## Auf dem iPhone
-1. Die Dateien auf einen HTTPS-Webserver legen.
-2. Die Adresse in Safari öffnen.
-3. „Teilen“ → „Zum Home-Bildschirm“.
-4. „Hinzufügen“ wählen und anschließend das neue Kaltschuss-Icon starten.
+## Speicherung und Backups
+- Einträge und Bilder werden lokal in IndexedDB auf diesem Gerät gespeichert.
+- Bestehende Daten aus `localStorage` (`kaltschuss_v4`) werden beim ersten Start nach Möglichkeit automatisch übernommen.
+- Unter „Einträge“ → „Datenverwaltung“ kannst du ein JSON-Backup exportieren und später wieder importieren.
+- Beim Import kannst du die aktuellen Einträge ersetzen oder importierte Einträge hinzufügen.
+- Backups enthalten auch die Bilder. Bewahre sie an einem sicheren Ort auf.
 
-Wichtig: Eine PWA muss für die Installation über HTTPS ausgeliefert werden (localhost ist nur für Entwicklung ausreichend).
-
-## Daten
-Die Logbuchdaten bleiben im Browser-Speicher des jeweiligen Geräts. Es gibt in dieser Version keine automatische Cloud-Synchronisation zwischen Freunden.
-
-## Treffererfassung
-Die PWA arbeitet lokal/offline. Treffer werden direkt auf dem Scheibenfoto durch Tippen gesetzt und können korrigiert werden. Es wird bewusst keine externe KI-API mit Zugangsdaten in den Client eingebaut.
-
-## Hinweis zur Prognose
-Die Prognose ist auf neutrale Beschreibung von Trefferlage/Streuung und Zusammenhängen mit Wetterdaten beschränkt; konkrete Ziel- oder Haltepunktanweisungen sind nicht Bestandteil dieser Version.
+Hinweis: Lokale Browserdaten sind kein Ersatz für regelmäßige Backups. Verwende die PWA möglichst immer unter derselben HTTPS-Adresse und im selben Browserprofil.
