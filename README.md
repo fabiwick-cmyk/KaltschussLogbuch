@@ -1,15 +1,19 @@
-# Kaltschuss Logbuch – PWA
+# Kaltschuss Logbuch V8 – IndexedDB
 
-## Installation auf dem iPhone
-1. Lade den kompletten Inhalt dieses Ordners auf einen HTTPS-Webhost hoch. Die Dateien `index.html`, `manifest.webmanifest`, `service-worker.js` und der Ordner `icons` müssen zusammen im selben Verzeichnis liegen.
-2. Öffne die HTTPS-Adresse in Safari.
-3. Tippe auf „Teilen“ → „Zum Home-Bildschirm“ → „Hinzufügen“.
+Statische iPhone-/PWA-Web-App für das Kaltschuss-Logbuch.
 
-## Speicherung und Backups
-- Einträge und Bilder werden lokal in IndexedDB auf diesem Gerät gespeichert.
-- Bestehende Daten aus `localStorage` (`kaltschuss_v4`) werden beim ersten Start nach Möglichkeit automatisch übernommen.
-- Unter „Einträge“ → „Datenverwaltung“ kannst du ein JSON-Backup exportieren und später wieder importieren.
-- Beim Import kannst du die aktuellen Einträge ersetzen oder importierte Einträge hinzufügen.
-- Backups enthalten auch die Bilder. Bewahre sie an einem sicheren Ort auf.
+## Speicherung
+- Einträge und Scheibenfotos werden in **IndexedDB** im Browser gespeichert.
+- Beim ersten Start werden vorhandene Daten aus der früheren `localStorage`-Version `kaltschuss_v4` einmalig übernommen.
+- Danach arbeitet die App nicht mehr mit `localStorage` für die Einträge.
+- Die Daten bleiben an Browser/Gerät und Origin der App gebunden.
 
-Hinweis: Lokale Browserdaten sind kein Ersatz für regelmäßige Backups. Verwende die PWA möglichst immer unter derselben HTTPS-Adresse und im selben Browserprofil.
+## GitHub Pages
+1. Alle Dateien dieses Ordners in das Repository hochladen.
+2. GitHub Pages auf Branch `main` und Ordner `/(root)` stellen.
+3. Nach der Veröffentlichung die Seite öffnen.
+
+## Dateien
+- `index.html` – komplette App
+- `.nojekyll` – verhindert Jekyll-Verarbeitung
+- `README.md` – diese Anleitung
