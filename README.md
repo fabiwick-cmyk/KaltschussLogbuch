@@ -22,3 +22,6 @@ V14: Lokale statistische Prognose mit separater Waffenauswahl und passender Muni
 
 
 V15: Grafische Darstellung der lokalen statistischen Prognose auf derselben 10x10-cm-Kaltschussscheibe wie im Scheibenreiter. Blauer Marker = prognostizierter Gruppenmittelpunkt, gestrichelter blauer Kreis = gewichtete Streuung historischer Gruppenmittelpunkte (kein Konfidenzintervall). Bei weniger als drei Messungen keine Grafik. Änderungen an Prognosefiltern/Wetterfeldern verbergen eine veraltete Prognose bis zur Neuberechnung.
+
+
+V16: Dunkle Auswahlfelder für Waffe/Munition im Reiter Prognose. Doppelte Filterzusammenfassung bei Scheibe entfernt. Munition bei Erfassen jetzt als kompakte Auswahl mit + Munition. Neue Sorten werden pro Waffe im IndexedDB-Metadatenspeicher verwaltet; alte Einträge bleiben erhalten und werden weiterhin in der Auswahl angezeigt.
